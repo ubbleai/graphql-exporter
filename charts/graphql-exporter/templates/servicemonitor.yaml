@@ -11,7 +11,7 @@ spec:
       - {{ .Release.Namespace }}
   selector:
     matchLabels:
-      {{- include "graphql-exporter.labels" . | nindent 4 }}
+      {{- include "graphql-exporter.labels" . | nindent 6 }}
   endpoints:
     - port: http
       path: /metrics

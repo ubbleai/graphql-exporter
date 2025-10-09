@@ -250,6 +250,7 @@ func (collector *GraphqlCollector) Collect(ch chan<- prometheus.Metric) {
 				close(wrappedCh)
 			}()
 			for m := range wrappedCh {
+				querySet.PreviousRun = time.Now()
 				s := prometheus.NewMetricWithTimestamp(querySet.PreviousRun, m)
 				ch <- s
 			}

@@ -40,6 +40,7 @@ type GraphqlCollector struct {
 	updaterMu        sync.Mutex
 	accessMu         sync.Mutex
 	graphqlURL       string
+	disableTimestamp bool
 }
 
 // Build Prometheux MetricVec with label dimensions.
@@ -119,10 +120,11 @@ func newGraphqlCollector() *GraphqlCollector {
 	}
 
 	return &GraphqlCollector{
-		cachedQuerySet: cachedQuerySet,
-		updaterMu:      sync.Mutex{},
-		accessMu:       sync.Mutex{},
-		graphqlURL:     config.Config.GraphqlURL,
+		cachedQuerySet:   cachedQuerySet,
+		updaterMu:        sync.Mutex{},
+		accessMu:         sync.Mutex{},
+		graphqlURL:       config.Config.GraphqlURL,
+		disableTimestamp: config.Config.DisableTimestamp,
 	}
 }
 
@@ -250,10 +252,15 @@ func (collector *GraphqlCollector) Collect(ch chan<- prometheus.Metric) {
 				close(wrappedCh)
 			}()
 			for m := range wrappedCh {
-				s := prometheus.NewMetricWithTimestamp(querySet.PreviousRun, m)
-				ch <- s
-			}
+				var metric prometheus.Metric
+				if collector.disableTimestamp {
+					metric = m
+				} else {
+					metric = prometheus.NewMetricWithTimestamp(querySet.PreviousRun, m)
 
+				}
+				ch <- metric
+			}
 		}
 	}
 }

@@ -45,12 +45,9 @@ func Push(endpoint, jobName string) {
 	ticker := time.NewTicker(1 * time.Second)
 	wg.Add(1)
 	go func() {
-		for {
-			select {
-			case <-ticker.C:
-				if err := pushGateWayClient.Push(); err != nil {
-					slog.Error(fmt.Sprintf("Could not push to push gateway %v", err))
-				}
+		for range ticker.C {
+			if err := pushGateWayClient.Push(); err != nil {
+				slog.Error(fmt.Sprintf("Could not push to push gateway %v", err))
 			}
 		}
 	}()

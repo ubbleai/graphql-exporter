@@ -19,6 +19,7 @@ type Cfg struct {
 	FailFast            bool    `yaml:"failFast"`
 	ExtendCacheOnError  bool    `yaml:"extendCacheOnError"`
 	Queries             []Query `yaml:"queries"`
+	DisableTimestamp    bool    `yaml:"disableTimestamp"`
 }
 
 type Query struct {

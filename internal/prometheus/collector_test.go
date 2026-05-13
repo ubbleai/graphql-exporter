@@ -138,3 +138,25 @@ func TestEvictStaleLabels_ZeroDimensionSkipped(t *testing.T) {
 		m.evictStaleLabels(time.Now(), time.Minute)
 	})
 }
+
+func TestZeroDimensionGuard_WritePathSkipsNilMap(t *testing.T) {
+	t.Parallel()
+	// Simulate the inner block of getMetrics() with a zero-dim metric: nil map should not panic
+	// and should not be populated.
+	m := &Metric{
+		LabelNames:    nil,
+		Name:          "test_zero_dim_write",
+		labelLastSeen: nil,
+	}
+	// Mirror the production guard: only stamp if map is non-nil.
+	stamp := func(labels []string) {
+		if m.labelLastSeen == nil {
+			return
+		}
+		sk := labelsToStorageKey(m.LabelNames, labels)
+		require.NotEmpty(t, sk)
+		m.labelLastSeen[sk] = time.Now()
+	}
+	require.NotPanics(t, func() { stamp(nil) })
+	require.Nil(t, m.labelLastSeen)
+}

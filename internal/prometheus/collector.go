@@ -130,13 +130,17 @@ func newGraphqlCollector() *GraphqlCollector {
 					labelNames,
 				)
 			}
+			var lastSeen map[string]time.Time
+			if len(labelNames) > 0 {
+				lastSeen = make(map[string]time.Time)
+			}
 			metrics = append(metrics, &Metric{
 				Collector:     collector,
 				Name:          name,
 				LabelNames:    labelNames,
 				Config:        m,
 				Extractor:     extractor,
-				labelLastSeen: make(map[string]time.Time),
+				labelLastSeen: lastSeen,
 			})
 		}
 		querySet := &QuerySet{
@@ -233,7 +237,7 @@ func (collector *GraphqlCollector) getMetrics() error {
 				default:
 					slog.Error(fmt.Sprintf("unsuported collector type %v", v))
 				}
-				if ttl > 0 && updated {
+				if ttl > 0 && updated && m.labelLastSeen != nil {
 					if sk := labelsToStorageKey(m.LabelNames, labels); sk != "" {
 						m.labelLastSeen[sk] = sampleNow
 					} else {

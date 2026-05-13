@@ -20,6 +20,10 @@ type Cfg struct {
 	ExtendCacheOnError  bool    `yaml:"extendCacheOnError"`
 	Queries             []Query `yaml:"queries"`
 	DisableTimestamp    bool    `yaml:"disableTimestamp"`
+	// UnusedLabelTTLSeconds removes a label combination from the Prometheus vec if it was not
+	// updated in any successful scrape for this long. 0 disables eviction. This drops stale
+	// series without resetting entire vecs (unlike Reset), so active counters/histograms keep state.
+	UnusedLabelTTLSeconds int64 `yaml:"unusedLabelTTLSeconds"`
 }
 
 type Query struct {
@@ -74,6 +78,11 @@ func Init(configPath string) error {
 
 	if Config.QueryTimeout == 0 {
 		Config.QueryTimeout = 60
+	}
+
+	if Config.UnusedLabelTTLSeconds > 0 {
+		slog.Info("unused label eviction enabled",
+			"unusedLabelTTLSeconds", Config.UnusedLabelTTLSeconds)
 	}
 
 	slog.Info(fmt.Sprintf("Finished reading config from %s", configPath))

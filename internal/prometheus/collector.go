@@ -28,6 +28,10 @@ type QuerySet struct {
 
 type Metric struct {
 	Collector prometheus.Collector
+	// Name is the resolved Prometheus metric name within its subsystem (user-supplied m.Name,
+	// or derived from m.Value when m.Name is empty). Used as the disambiguating label on the
+	// exporter's own observability vecs.
+	Name string
 	// LabelNames are Prometheus vec label names in callback / WithLabelValues order (sorted extractor aliases).
 	LabelNames []string
 	Config     config.Metric
@@ -128,6 +132,7 @@ func newGraphqlCollector() *GraphqlCollector {
 			}
 			metrics = append(metrics, &Metric{
 				Collector:     collector,
+				Name:          name,
 				LabelNames:    labelNames,
 				Config:        m,
 				Extractor:     extractor,

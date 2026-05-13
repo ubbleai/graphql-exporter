@@ -40,7 +40,10 @@ type Metric struct {
 	labelLastSeen map[string]time.Time
 }
 
-// evictStaleLabels removes vec children whose last update is older than ttl.
+// evictStaleLabels removes vec children whose last update is older than ttl, then updates the
+// exporter's own observability metrics.
+//
+// Must be called under GraphqlCollector.accessMu (which serializes Collect and getMetrics).
 func (m *Metric) evictStaleLabels(now time.Time, ttl time.Duration) {
 	if ttl <= 0 || len(m.labelLastSeen) == 0 {
 		return
@@ -57,6 +60,10 @@ func (m *Metric) evictStaleLabels(now time.Time, ttl time.Duration) {
 		}
 		delete(m.labelLastSeen, key)
 	}
+	if len(dead) > 0 {
+		evictedTotal.WithLabelValues(m.Name).Add(float64(len(dead)))
+	}
+	trackedLabels.WithLabelValues(m.Name).Set(float64(len(m.labelLastSeen)))
 }
 
 type GraphqlCollector struct {

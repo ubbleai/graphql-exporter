@@ -4,6 +4,36 @@ import (
 	"encoding/json"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/vinted/graphql-exporter/internal/config"
+)
+
+// evictedTotal counts label combinations removed from a user metric's vec by TTL eviction.
+// trackedLabels reports the current size of labelLastSeen per user metric (steady-state cardinality
+// once eviction reaches equilibrium).
+//
+// Both are registered on prometheus.DefaultRegisterer (via promauto) and exposed by the same
+// /metrics handler as the user metrics. They are written to only when TTL eviction is active,
+// so with unusedLabelTTLSeconds=0 they emit no series.
+var (
+	evictedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: config.PrometheusNamespace,
+			Subsystem: "exporter",
+			Name:      "evicted_labels_total",
+			Help:      "Label combinations removed from a user metric's vec by the TTL eviction policy.",
+		},
+		[]string{"metric"},
+	)
+	trackedLabels = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: config.PrometheusNamespace,
+			Subsystem: "exporter",
+			Name:      "tracked_labels",
+			Help:      "Current size of the label-last-seen map per user metric.",
+		},
+		[]string{"metric"},
+	)
 )
 
 // labelsToStorageKey encodes label names and values as a stable string for map[...]time.Time.

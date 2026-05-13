@@ -139,6 +139,53 @@ func TestEvictStaleLabels_ZeroDimensionSkipped(t *testing.T) {
 	})
 }
 
+func readCounter(c prometheus.Counter) float64 {
+	pb := &dto.Metric{}
+	if err := c.Write(pb); err != nil {
+		return -1
+	}
+	return pb.GetCounter().GetValue()
+}
+
+func readGauge(g prometheus.Gauge) float64 {
+	pb := &dto.Metric{}
+	if err := g.Write(pb); err != nil {
+		return -1
+	}
+	return pb.GetGauge().GetValue()
+}
+
+func TestEvictStaleLabels_UpdatesObservabilityMetrics(t *testing.T) {
+	// Cannot use t.Parallel() — touches package-level promauto vecs whose state would race
+	// with other tests on the same metric label.
+	const metricName = "test_obs_metric_uniq"
+	g := prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "test_obs", Help: "h"}, []string{"job"})
+
+	names := []string{"job"}
+	now := time.Now()
+	skKeep := labelsToStorageKey(names, []string{"keep"})
+	skDrop := labelsToStorageKey(names, []string{"drop"})
+
+	m := &Metric{
+		Collector:  g,
+		Name:       metricName,
+		LabelNames: names,
+		labelLastSeen: map[string]time.Time{
+			skKeep: now.Add(-time.Minute),
+			skDrop: now.Add(-time.Hour),
+		},
+	}
+	g.WithLabelValues("keep").Set(1)
+	g.WithLabelValues("drop").Set(1)
+
+	evictedBefore := readCounter(evictedTotal.WithLabelValues(metricName))
+
+	m.evictStaleLabels(now, 30*time.Minute)
+
+	require.Equal(t, evictedBefore+1, readCounter(evictedTotal.WithLabelValues(metricName)))
+	require.Equal(t, 1.0, readGauge(trackedLabels.WithLabelValues(metricName)))
+}
+
 func TestZeroDimensionGuard_WritePathSkipsNilMap(t *testing.T) {
 	t.Parallel()
 	// Simulate the inner block of getMetrics() with a zero-dim metric: nil map should not panic

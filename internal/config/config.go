@@ -47,6 +47,12 @@ type Metric struct {
 	Name             string    `yaml:"name"`
 }
 
+// PrometheusNamespace is the fixed Prometheus namespace used by the exporter's own observability
+// metrics (evicted_labels_total, tracked_labels). It is intentionally a compile-time constant so
+// it can be referenced at package-init time (promauto), before Init() runs. User metrics use
+// Cfg.MetricsPrefix, which is configurable and may differ if redeployed elsewhere.
+const PrometheusNamespace = "ubbleai_graphql_exporter"
+
 var (
 	Config     *Cfg
 	ConfigPath string

@@ -62,3 +62,27 @@ Run the container
 ```
 docker run -it -v ./gitlab.yaml:/gitlab-yaml --rm -p 9353:9353 registry.ubble.ai/ubbleai/sandbox/graphql-exporter:dev
 ```
+
+## Unused label eviction
+
+GraphQL responses with high-cardinality fields (e.g. GitLab `pipeline_ref`, `job_name`) cause the in-process Prometheus vecs to accumulate label combinations that never reappear (deleted MRs, retired jobs). Set `unusedLabelTTLSeconds` to evict a label child once it has not been seen by a successful scrape for that duration.
+
+```yaml
+unusedLabelTTLSeconds: 21600   # 6h; 0 (default) disables eviction
+```
+
+Behaviour:
+
+- Eviction runs at the end of each **successful** scrape (skipped if the underlying GraphQL query errored — no purge on transient outages).
+- Per-child: only stale series are removed. Active counters keep their accumulated value across scrapes; only series that have not been seen for `unusedLabelTTLSeconds` are dropped.
+- Counter resets: when an evicted label combination reappears, its counter restarts at zero. PromQL `rate()` / `increase()` handle counter resets natively.
+- Zero-dimension metrics (no labels) are not tracked — there is at most one child.
+
+The exporter exposes two observability metrics under the `ubbleai_graphql_exporter_exporter_` prefix:
+
+| Metric | Type | Meaning |
+|--------|------|---------|
+| `ubbleai_graphql_exporter_exporter_evicted_labels_total{metric}` | counter | label combinations removed by the TTL policy |
+| `ubbleai_graphql_exporter_exporter_tracked_labels{metric}` | gauge | current size of the label-last-seen map (steady-state cardinality) |
+
+When `unusedLabelTTLSeconds=0` the two metrics emit no series (the eviction code never runs).

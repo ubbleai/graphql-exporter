@@ -36,6 +36,16 @@ func TestLabelsStorageKeyMismatch(t *testing.T) {
 	require.Equal(t, "", labelsToStorageKey([]string{"a"}, []string{"x", "y"}))
 }
 
+func TestLabelValuesFromStorageKey_UnknownName(t *testing.T) {
+	t.Parallel()
+	// key encodes {"a":"x"} but we ask for ["a","b"] → "b" is absent → nil.
+	names := []string{"a"}
+	key := labelsToStorageKey(names, []string{"x"})
+	require.NotEmpty(t, key)
+	got := labelValuesFromStorageKey([]string{"a", "b"}, key)
+	require.Nil(t, got)
+}
+
 func countVecMetrics(reg prometheus.Gatherer) int {
 	mfs, err := reg.Gather()
 	if err != nil {

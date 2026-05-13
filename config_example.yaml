@@ -6,6 +6,7 @@ cacheExpire: 0
 queryTimeout: 60
 failFast: false
 extendCacheOnError: false
+# unusedLabelTTLSeconds: 21600   # evict label combinations not seen for N seconds (0 = disabled)
 queries:
 - query: query {device_list {name serial custom_fields}} {{NOW "-1h"}}
   metrics:

@@ -28,9 +28,42 @@ type QuerySet struct {
 
 type Metric struct {
 	Collector prometheus.Collector
-	Labels    []string
-	Config    config.Metric
-	Extractor Extractor
+	// Name is the resolved Prometheus metric name within its subsystem (user-supplied m.Name,
+	// or derived from m.Value when m.Name is empty). Used as the disambiguating label on the
+	// exporter's own observability vecs.
+	Name string
+	// LabelNames are Prometheus vec label names in callback / WithLabelValues order (sorted extractor aliases).
+	LabelNames []string
+	Config     config.Metric
+	Extractor  Extractor
+	// labelLastSeen records the last time this label set was updated from GraphQL (success path).
+	labelLastSeen map[string]time.Time
+}
+
+// evictStaleLabels removes vec children whose last update is older than ttl, then updates the
+// exporter's own observability metrics.
+//
+// Must be called under GraphqlCollector.accessMu (which serializes Collect and getMetrics).
+func (m *Metric) evictStaleLabels(now time.Time, ttl time.Duration) {
+	if ttl <= 0 || len(m.labelLastSeen) == 0 {
+		return
+	}
+	var dead []string
+	for key, t := range m.labelLastSeen {
+		if now.Sub(t) >= ttl {
+			dead = append(dead, key)
+		}
+	}
+	for _, key := range dead {
+		if lvs := labelValuesFromStorageKey(m.LabelNames, key); lvs != nil {
+			vecDeleteLabelValues(m.Collector, lvs)
+		}
+		delete(m.labelLastSeen, key)
+	}
+	if len(dead) > 0 {
+		evictedTotal.WithLabelValues(m.Name).Add(float64(len(dead)))
+	}
+	trackedLabels.WithLabelValues(m.Name).Set(float64(len(m.labelLastSeen)))
 }
 
 type GraphqlCollector struct {
@@ -104,10 +137,17 @@ func newGraphqlCollector() *GraphqlCollector {
 					labelNames,
 				)
 			}
+			var lastSeen map[string]time.Time
+			if len(labelNames) > 0 {
+				lastSeen = make(map[string]time.Time)
+			}
 			metrics = append(metrics, &Metric{
-				Collector: collector,
-				Config:    m,
-				Extractor: extractor,
+				Collector:     collector,
+				Name:          name,
+				LabelNames:    labelNames,
+				Config:        m,
+				Extractor:     extractor,
+				labelLastSeen: lastSeen,
 			})
 		}
 		querySet := &QuerySet{
@@ -170,12 +210,15 @@ func (collector *GraphqlCollector) getMetrics() error {
 			continue
 		}
 		slog.Debug(fmt.Sprintf("data found %+v", data))
+		ttl := time.Duration(config.Config.UnusedLabelTTLSeconds) * time.Second
 		for _, m := range q.Metrics {
 			metricCtx := context.WithValue(queryCtx, "metric", m.Config.Name)
+			sampleNow := time.Now()
 			callbackFunc := func(value string, labels []string) {
 				if value == "" || value == "<nil>" {
 					return
 				}
+				updated := false
 				switch v := m.Collector.(type) {
 				case *prometheus.HistogramVec:
 					f, err := strconv.ParseFloat(value, 64)
@@ -183,23 +226,37 @@ func (collector *GraphqlCollector) getMetrics() error {
 						slog.ErrorContext(metricCtx, "fail to convert metric to float", slog.String("value", value))
 					}
 					v.WithLabelValues(labels...).Observe(f)
+					updated = true
 				case *prometheus.GaugeVec:
 					f, err := strconv.ParseFloat(value, 64)
 					if err != nil {
 						slog.ErrorContext(metricCtx, "fail to convert metric to float", slog.String("value", value))
 					}
 					v.WithLabelValues(labels...).Set(f)
+					updated = true
 				case *prometheus.CounterVec:
 					f, err := strconv.ParseFloat(value, 64)
 					if err != nil || f < 0 {
 						f = 1
 					}
 					v.WithLabelValues(labels...).Add(f)
+					updated = true
 				default:
 					slog.Error(fmt.Sprintf("unsuported collector type %v", v))
 				}
+				if ttl > 0 && updated && m.labelLastSeen != nil {
+					if sk := labelsToStorageKey(m.LabelNames, labels); sk != "" {
+						m.labelLastSeen[sk] = sampleNow
+					} else {
+						slog.ErrorContext(metricCtx, "label cardinality mismatch for unused-label tracking",
+							slog.Int("labelNames", len(m.LabelNames)), slog.Int("labelValues", len(labels)))
+					}
+				}
 			}
 			m.Extractor.ExtractMetrics(data, callbackFunc)
+			if ttl > 0 && len(gql.Errors) == 0 {
+				m.evictStaleLabels(sampleNow, ttl)
+			}
 		}
 	}
 	return nil

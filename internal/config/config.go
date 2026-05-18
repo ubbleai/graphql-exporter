@@ -20,6 +20,10 @@ type Cfg struct {
 	ExtendCacheOnError  bool    `yaml:"extendCacheOnError"`
 	Queries             []Query `yaml:"queries"`
 	DisableTimestamp    bool    `yaml:"disableTimestamp"`
+	// UnusedLabelTTLSeconds removes a label combination from the Prometheus vec if it was not
+	// updated in any successful scrape for this long. 0 disables eviction. This drops stale
+	// series without resetting entire vecs (unlike Reset), so active counters/histograms keep state.
+	UnusedLabelTTLSeconds int64 `yaml:"unusedLabelTTLSeconds"`
 }
 
 type Query struct {
@@ -42,6 +46,12 @@ type Metric struct {
 	Value            string    `yaml:"value"`
 	Name             string    `yaml:"name"`
 }
+
+// PrometheusNamespace is the fixed Prometheus namespace used by the exporter's own observability
+// metrics (evicted_labels_total, tracked_labels). It is intentionally a compile-time constant so
+// it can be referenced at package-init time (promauto), before Init() runs. User metrics use
+// Cfg.MetricsPrefix, which is configurable and may differ if redeployed elsewhere.
+const PrometheusNamespace = "ubbleai_graphql_exporter"
 
 var (
 	Config     *Cfg
@@ -74,6 +84,11 @@ func Init(configPath string) error {
 
 	if Config.QueryTimeout == 0 {
 		Config.QueryTimeout = 60
+	}
+
+	if Config.UnusedLabelTTLSeconds > 0 {
+		slog.Info("unused label eviction enabled",
+			"unusedLabelTTLSeconds", Config.UnusedLabelTTLSeconds)
 	}
 
 	slog.Info(fmt.Sprintf("Finished reading config from %s", configPath))

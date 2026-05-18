@@ -254,7 +254,7 @@ func (collector *GraphqlCollector) getMetrics() error {
 				}
 			}
 			m.Extractor.ExtractMetrics(data, callbackFunc)
-			if ttl > 0 {
+			if ttl > 0 && len(gql.Errors) == 0 {
 				m.evictStaleLabels(sampleNow, ttl)
 			}
 		}
